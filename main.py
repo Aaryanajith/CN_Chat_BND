@@ -6,19 +6,16 @@ from client import clients
 
 app = FastAPI()
 
-# Enable CORS for frontend
+# CORS setup
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",        # local development
-        "https://cn-chat-fnd.vercel.app"  # deployed frontend (update if needed)
-    ],
+    allow_origins=["http://localhost:3000", "https://cn-chat-fnd.vercel.app/"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Mount GraphQL schema (if needed)
+# GraphQL endpoint
 graphql_app = GraphQL(schema)
 app.mount("/graphql", graphql_app)
 
@@ -36,10 +33,15 @@ async def websocket_endpoint(websocket: WebSocket):
         await websocket.close()
         return
 
-    if username in clients:
-        await websocket.send_text("[ERROR] Username already taken.")
-        await websocket.close()
-        return
+    # Disconnect previous user if already connected
+    old_socket = clients.get(username)
+    if old_socket:
+        try:
+            await old_socket.send_text("[SERVER] You have been disconnected due to a new login.")
+            await old_socket.close()
+        except:
+            pass
+        del clients[username]
 
     clients[username] = websocket
     await broadcast(f"[SERVER] {username} has joined the chat.", exclude=username)
@@ -48,8 +50,6 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         while True:
             data = await websocket.receive_text()
-
-            # Private message logic
             if data.startswith('@'):
                 parts = data[1:].split(' ', 1)
                 if len(parts) == 2:
@@ -62,30 +62,25 @@ async def websocket_endpoint(websocket: WebSocket):
 
     except WebSocketDisconnect:
         print(f"[DISCONNECTED] {username}")
-        await broadcast(f"[SERVER] {username} has left the chat.")
-    except Exception as e:
-        print(f"[ERROR] Unexpected error for {username}: {e}")
     finally:
         if username in clients:
             del clients[username]
+        await broadcast(f"[SERVER] {username} has left the chat.")
 
-# Broadcast to all users except optionally one
 async def broadcast(message: str, exclude: str = None):
-    for user, ws in list(clients.items()):
+    for user, ws in clients.items():
         if user != exclude:
             try:
                 await ws.send_text(message)
             except:
                 pass
 
-# Send private message from sender to recipient
 async def send_private_message(sender: str, recipient: str, message: str):
     recipient_ws = clients.get(recipient)
     sender_ws = clients.get(sender)
-
     if recipient_ws:
         await recipient_ws.send_text(f"[PRIVATE] {sender}: {message}")
         await sender_ws.send_text(f"[TO {recipient}] {message}")
     else:
-        await sender_ws.send_text(f"[ERROR] User '{recipient}' not found.")
+        await sender_ws.send_text(f"[ERROR] User {recipient} not found.")
 
