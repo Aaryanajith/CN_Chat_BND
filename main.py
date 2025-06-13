@@ -1,4 +1,3 @@
-# main.py
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from strawberry.asgi import GraphQL
@@ -7,16 +6,19 @@ from client import clients
 
 app = FastAPI()
 
-# Enable CORS
+# Enable CORS for frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "https://cn-chat-fnd.vercel.app/"],
+    allow_origins=[
+        "http://localhost:3000",        # local development
+        "https://cn-chat-fnd.vercel.app"  # deployed frontend (update if needed)
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# GraphQL setup
+# Mount GraphQL schema (if needed)
 graphql_app = GraphQL(schema)
 app.mount("/graphql", graphql_app)
 
@@ -46,6 +48,8 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         while True:
             data = await websocket.receive_text()
+
+            # Private message logic
             if data.startswith('@'):
                 parts = data[1:].split(' ', 1)
                 if len(parts) == 2:
@@ -54,27 +58,34 @@ async def websocket_endpoint(websocket: WebSocket):
                 else:
                     await websocket.send_text("[ERROR] Invalid private message format. Use @username message.")
             else:
-                await broadcast(f"[{username}] {data}", exclude=username)
+                await broadcast(f"[{username}]: {data}", exclude=username)
 
     except WebSocketDisconnect:
         print(f"[DISCONNECTED] {username}")
-    finally:
-        del clients[username]
         await broadcast(f"[SERVER] {username} has left the chat.")
+    except Exception as e:
+        print(f"[ERROR] Unexpected error for {username}: {e}")
+    finally:
+        if username in clients:
+            del clients[username]
 
+# Broadcast to all users except optionally one
 async def broadcast(message: str, exclude: str = None):
-    for user, ws in clients.items():
+    for user, ws in list(clients.items()):
         if user != exclude:
             try:
                 await ws.send_text(message)
             except:
                 pass
 
+# Send private message from sender to recipient
 async def send_private_message(sender: str, recipient: str, message: str):
     recipient_ws = clients.get(recipient)
     sender_ws = clients.get(sender)
+
     if recipient_ws:
         await recipient_ws.send_text(f"[PRIVATE] {sender}: {message}")
         await sender_ws.send_text(f"[TO {recipient}] {message}")
     else:
-        await sender_ws.send_text(f"[ERROR] User {recipient} not found.")
+        await sender_ws.send_text(f"[ERROR] User '{recipient}' not found.")
+
