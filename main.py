@@ -44,7 +44,7 @@ async def websocket_endpoint(websocket: WebSocket):
         del clients[username]
 
     clients[username] = websocket
-    await broadcast(f"[SERVER] {username} has joined the chat.", exclude=username)
+    await broadcast(f"[SERVER] {username} has joined the chat.")
     print(f"[CONNECTED] {username}")
 
     try:
