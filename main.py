@@ -58,7 +58,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 else:
                     await websocket.send_text("[ERROR] Invalid private message format. Use @username message.")
             else:
-                await broadcast(f"[{username}]: {data}", exclude=username)
+                await broadcast(f"[{username}]: {data}")
 
     except WebSocketDisconnect:
         print(f"[DISCONNECTED] {username}")
